@@ -27,20 +27,30 @@ class FPNLayer(nn.Module):
 
 
 class Backbone(nn.Module):
-    def __init__(self, backbone='MobileNetv2'):
+    def __init__(self, backbone='MobileNetv2', pretrained=True, pretrained_path=None):
         super().__init__()
         if backbone == 'MobileNetv2':
-            model = timm.create_model('mobilenetv2_100', pretrained=True, features_only=True)
+            print("create mbnetv2")
+            model = timm.create_model('mobilenetv2_100', pretrained=pretrained and pretrained_path is None, features_only=True)
             channels = [160, 96, 32, 24]
         elif backbone == 'EfficientNetv2':
-            model = timm.create_model('efficientnetv2_rw_s', pretrained=True, features_only=True)
+            model = timm.create_model('efficientnetv2_rw_s', pretrained=pretrained and pretrained_path is None, features_only=True)
             channels = [272, 160, 64, 48]
         else:
             raise NotImplementedError
+        
+        if pretrained and pretrained_path is not None:
+            from safetensors.torch import load_file
+            state = load_file(pretrained_path)
+            state = {k.replace("module.", "", 1): v for k, v in state.items()}  # remove ddp wrapper
+            missing, unexpected = model.load_state_dict(state, strict=False)
+            assert len(missing) == 0, f"Missing keys when loading pretrained backbone: {missing}"
+            print(f"Loaded pretrained backbone from {pretrained_path}, unexpected keys: {unexpected}")
 
         self.conv_stem = model.conv_stem
         self.bn1 = model.bn1
-        self.act1 = model.act1
+        # self.act1 = model.act1  # mbnet v2没有act1，经查询应该是ReLU6
+        self.act1 = nn.ReLU6(inplace=True)
         self.block0 = model.blocks[0]
         self.block1 = model.blocks[1]
         self.block2 = model.blocks[2]

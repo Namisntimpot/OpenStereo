@@ -1,5 +1,7 @@
 import torch
 from functools import partial
+from pathlib import Path
+import os.path as osp
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 
@@ -25,6 +27,7 @@ from .foundationstereo import FoundationStereoDataset
 from .dynamic_replica import DynamicReplicaDataset
 from .mono_dataset import MonoDataset
 from .realfill_dataset import RealfillDataset
+from .nsl_dataset import NSLDataset
 
 __all__ = {
     'RealfillDataset': RealfillDataset,
@@ -46,7 +49,8 @@ __all__ = {
     'VirtualKitti2Dataset': VirtualKitti2Dataset,
     'FoundationStereoDataset': FoundationStereoDataset,
     'DynamicReplicaDataset': DynamicReplicaDataset,
-    'CarlaDataset': CarlaDataset
+    'CarlaDataset': CarlaDataset,
+    'NSLDataset': NSLDataset,
 }
 
 

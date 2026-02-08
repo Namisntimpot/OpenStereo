@@ -7,6 +7,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.distributed as dist
+from tqdm import tqdm
 
 from functools import partial
 from stereo.datasets import build_dataloader
@@ -17,6 +18,9 @@ from stereo.utils.clip_grad import ClipGrad
 from stereo.utils.lamb import Lamb
 from stereo.evaluation.metric_per_image import epe_metric, d1_metric, threshold_metric
 
+def _print_at_rank0(msg):
+    if dist.get_rank() == 0:
+            print(msg)
 
 class TrainerTemplate:
     def __init__(self, args, cfgs, local_rank, global_rank, logger, tb_writer, model):
@@ -29,12 +33,18 @@ class TrainerTemplate:
 
         self.model = self.build_model(model)
 
-        if self.args.run_mode in ['train', 'eval']:
+        if self.args.run_mode in ['train', 'eval'] and self.cfgs.TRAINER.EVAL_INTERVAL > 0:
+            _print_at_rank0('Build Eval Dataloader...')
             self.eval_set, self.eval_loader, self.eval_sampler = self.build_eval_loader()
 
         if self.args.run_mode == 'train':
+            _print_at_rank0('Build Train Dataloader...')
             self.train_set, self.train_loader, self.train_sampler = self.build_train_loader()
 
+            if 'MAX_ITER_PER_EPOCH' in cfgs.TRAINER:
+                self.logger.warning(f"Detected MAX_ITER_PER_EPOCH in TRAINER (={cfgs.TRAINER.MAX_ITER_PER_EPOCH}), the number of iterations per epoch will be limited.")
+                self.max_iter = cfgs.TRAINER.MAX_ITER_PER_EPOCH * cfgs.OPTIMIZATION.NUM_EPOCHS
+                self.total_epochs = cfgs.OPTIMIZATION.NUM_EPOCHS
             if 'MAX_ITER' in cfgs.OPTIMIZATION and cfgs.OPTIMIZATION.MAX_ITER > 0:
                 self.logger.warning("Detected MAX_ITER > 0, NUM_EPOCHS will be ignored.")
                 self.max_iter = cfgs.OPTIMIZATION.MAX_ITER
@@ -86,10 +96,20 @@ class TrainerTemplate:
             self.logger.info('Convert batch norm to sync batch norm')
         model = model.to(self.local_rank)
 
+        for n, p in model.named_parameters():
+            assert p.is_cuda, "Parameter {} is not in GPU".format(n)
+            assert p.device.index == self.local_rank, "Parameter {} is not in correct GPU".format(n)
+        for n, b in model.named_buffers():
+            assert b.is_cuda, "Buffer {} is not in GPU".format(n)
+            assert b.device.index == self.local_rank, "Buffer {} is not in correct GPU".format(n)
+
         if self.args.dist_mode:
+            _print_at_rank0("build DDP model...")
             model = nn.parallel.DistributedDataParallel(
                 model, device_ids=[self.local_rank], output_device=self.local_rank,
                 find_unused_parameters=self.cfgs.MODEL.FIND_UNUSED_PARAMETERS)
+            # model = nn.parallel.DistributedDataParallel(model, find_unused_parameters=self.cfgs.MODEL.FIND_UNUSED_PARAMETERS)
+            _print_at_rank0("build DDP model... done.")
 
         # load pretrained model
         if self.cfgs.MODEL.PRETRAINED_MODEL:
@@ -130,7 +150,8 @@ class TrainerTemplate:
             self.model.load_state_dict(checkpoint['model_state'])
 
     def build_warmup(self):
-        last_step = (self.last_epoch + 1) * len(self.train_loader) - 1
+        iter_per_epoch = min(len(self.train_loader), self.cfgs.TRAINER.get('MAX_ITER_PER_EPOCH', int(1e8)))
+        last_step = (self.last_epoch + 1) * iter_per_epoch - 1
         if 'WARMUP' in self.cfgs.OPTIMIZATION.SCHEDULER:
             warmup_steps = self.cfgs.OPTIMIZATION.SCHEDULER.WARMUP.get('WARM_STEPS', 1)
             warmup_scheduler = LinearWarmup(
@@ -175,6 +196,11 @@ class TrainerTemplate:
             dist.barrier()
 
     def save_ckpt(self, current_epoch):
+        # save last
+        ckpt_name = os.path.join(self.args.ckpt_dir, 'checkpoint_epoch_last.pth')
+        common_utils.save_checkpoint(self.model, self.optimizer, self.scheduler, self.scaler,
+                                     self.args.dist_mode, current_epoch, filename=ckpt_name)
+        # save interval
         if (current_epoch % self.cfgs.TRAINER.CKPT_SAVE_INTERVAL == 0 or current_epoch == self.total_epochs - 1) and self.global_rank == 0:
             ckpt_list = glob.glob(os.path.join(self.args.ckpt_dir, 'checkpoint_epoch_*.pth'))
             ckpt_list.sort(key=os.path.getmtime)
@@ -190,12 +216,21 @@ class TrainerTemplate:
     def train_one_epoch(self, current_epoch, tbar):
         start_epoch = self.last_epoch + 1
         logger_iter_interval = self.cfgs.TRAINER.LOGGER_ITER_INTERVAL
+        visualize_interval = self.cfgs.TRAINER.get("VISUALIZE_INTERVAL", self.cfgs.TRAINER.LOGGER_ITER_INTERVAL)
         total_loss = 0.0
         loss_func = self.model.module.get_loss if self.args.dist_mode else self.model.get_loss
 
         train_loader_iter = iter(self.train_loader)
-        for i in range(0, len(self.train_loader)):
-            total_iter = current_epoch * len(self.train_loader) + i
+        num_iters = min(len(self.train_loader), self.cfgs.TRAINER.get('MAX_ITER_PER_EPOCH', int(1e8)))
+
+        total_data_time_per_log = 0.0
+        total_inf_time_per_log = 0.
+        total_bwd_time_per_log = 0.
+        total_cnt_per_log = 0
+
+        pbar = tqdm(range(0, num_iters)) if self.local_rank == 0 else range(0, num_iters)
+        for i in pbar:
+            total_iter = current_epoch * num_iters + i
             if total_iter >= self.max_iter:
                 break
 
@@ -208,7 +243,8 @@ class TrainerTemplate:
                 data[k] = v.to(self.local_rank) if torch.is_tensor(v) else v
             data_timer = time.time()
 
-            with torch.cuda.amp.autocast(enabled=self.cfgs.OPTIMIZATION.AMP):
+            # with torch.cuda.amp.autocast(enabled=self.cfgs.OPTIMIZATION.AMP):
+            with torch.amp.autocast('cuda', enabled=self.cfgs.OPTIMIZATION.AMP):
                 model_pred = self.model(data)
                 infer_timer = time.time()
                 loss, tb_info = loss_func(model_pred, data)
@@ -225,6 +261,7 @@ class TrainerTemplate:
             # Updates the scale for next iteration.
             self.scaler.update()
             # torch.cuda.empty_cache()
+            bwd_timer = time.time()
 
             # warmup_scheduler period>1 和 batch_scheduler 不要同时使用
             with self.warmup_scheduler.dampening():
@@ -234,21 +271,30 @@ class TrainerTemplate:
             total_loss += loss.item()
 
             trained_time_past_all = tbar.format_dict['elapsed']
-            single_iter_second = trained_time_past_all / (total_iter + 1 - start_epoch * len(self.train_loader))
-            remaining_second_all = single_iter_second * (self.total_epochs * len(self.train_loader) - total_iter - 1)
+            single_iter_second = trained_time_past_all / (total_iter + 1 - start_epoch * num_iters)
+            remaining_second_all = single_iter_second * (self.total_epochs * num_iters - total_iter - 1)
+            total_data_time_per_log += data_timer - start_timer
+            total_inf_time_per_log += infer_timer - data_timer
+            total_bwd_time_per_log += bwd_timer - infer_timer
+            total_cnt_per_log += 1
             if total_iter % logger_iter_interval == 0:
                 message = ('Training Epoch:{:>2d}/{} Iter:{:>4d}/{} '
                            'Loss:{:#.6g}({:#.6g}) LR:{:.4e} '
-                           'DataTime:{:.2f} InferTime:{:.2f}ms '
+                           'DataTime:{:.3e} InferTime:{:.2f}ms BwdTime:{:.2f}ms '
                            'Time cost: {}/{}'
-                           ).format(current_epoch, self.total_epochs, i, len(self.train_loader),
+                           ).format(current_epoch, self.total_epochs, i, num_iters,
                                     loss.item(), total_loss / (i + 1), lr,
-                                    data_timer - start_timer, (infer_timer - data_timer) * 1000,
+                                    total_data_time_per_log / total_cnt_per_log, 
+                                    (total_inf_time_per_log / total_cnt_per_log) * 1000,
+                                    (total_bwd_time_per_log / total_cnt_per_log) * 1000,
                                     tbar.format_interval(trained_time_past_all),
                                     tbar.format_interval(remaining_second_all))
-                self.logger.info(message)
+                # self.logger.info(message)
+                if self.local_rank == 0:
+                    tqdm.write(message)
+                total_inf_time_per_log = total_data_time_per_log = total_bwd_time_per_log = total_cnt_per_log = 0
 
-            if self.cfgs.TRAINER.TRAIN_VISUALIZATION:
+            if self.cfgs.TRAINER.TRAIN_VISUALIZATION and total_iter % visualize_interval == 0:
                 tb_info['image/train/image'] = torch.cat([data['left'][0], data['right'][0]], dim=1) / 256
                 tb_info['image/train/disp'] = color_map_tensorboard(data['disp'][0], model_pred['disp_pred'].squeeze(1)[0])
 

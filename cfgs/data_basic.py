@@ -22,4 +22,5 @@ DATA_PATH_DICT = {
     'DynamicReplicaDataset': '/file_system/vepfs/public_data/stereo/dynamic_stereo',
     'MonoDataset': '/file_system/vepfs/public_data/depthAnythingData',
     'RealfillDataset': '/file_system/vepfs/public_data/depthAnythingData',
+    'NSLDataset': '/nvme1/jiaheng/dev/DeepSL/data',
 }

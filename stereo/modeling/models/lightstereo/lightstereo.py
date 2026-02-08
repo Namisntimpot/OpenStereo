@@ -16,7 +16,7 @@ class LightStereo(nn.Module):
         self.left_att = cfgs.LEFT_ATT
 
         # backbobe
-        self.backbone = Backbone(cfgs.get('BACKCONE', 'MobileNetv2'))
+        self.backbone = Backbone(cfgs.get('BACKCONE', 'MobileNetv2'), pretrained=cfgs.get('PRETRAINED', True), pretrained_path=cfgs.get('PRETRAINED_PATH', None))
 
         # aggregation
         self.cost_agg = Aggregation(in_channels=48,
