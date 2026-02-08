@@ -1,0 +1,82 @@
+DATA_CONFIG:
+    DATA_INFOS:
+        -   DATASET: NSLDataset
+            DATA_SPLIT: {
+                TRAINING: /nvme1/jiaheng/dev/DeepSL/data,
+                EVALUATING: /nvme1/jiaheng/dev/DeepSL/data,
+                TESTING: /nvme1/jiaheng/dev/DeepSL/data
+            }
+            RETURN_RIGHT_DISP: false
+            LOAD_TYPE: left_right
+            GRAY: true
+
+    DATA_TRANSFORM:
+        TRAINING:
+            - { NAME: StereoColorJitter, BRIGHTNESS: [ 0.6, 1.4 ], CONTRAST: [ 0.6, 1.4 ], SATURATION: [ 0.6, 1.4 ], HUE: 0.5, ASYMMETRIC_PROB: 0.2 }
+            - { NAME: RandomErase, PROB: 0.5, MAX_TIME: 2, BOUNDS: [ 50, 100 ] }
+            - { NAME: RandomScale, SIZE: [ 320, 736 ], MIN_SCALE: -0.2, MAX_SCALE: 0.4, SCALE_PROB: 0.8, STRETCH_PROB: 0.8 }
+            - { NAME: RandomCrop, SIZE: [ 320, 736 ], Y_JITTER: false }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+            - { NAME: NormalizeImage, MEAN: [ 0.485, 0.456, 0.406 ], STD: [ 0.229, 0.224, 0.225 ] }
+        EVALUATING:
+            - { NAME: RightTopPad, SIZE: [ 544, 960 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+            - { NAME: NormalizeImage, MEAN: [ 0.485, 0.456, 0.406 ], STD: [ 0.229, 0.224, 0.225 ] }
+
+MODEL:
+    NAME: LightStereo
+    MAX_DISP: 192
+    EXPANSE_RATIO: 8
+    AGGREGATION_BLOCKS: [8, 16, 32]
+    PRETRAINED: true
+    PRETRAINED_PATH: /nvme1/jiaheng/dev/DeepSL/zoo/ckpts/mbnet_v2.safetensors
+    LEFT_ATT: true
+    FIND_UNUSED_PARAMETERS: false
+    CKPT: -1
+    PRETRAINED_MODEL: ''
+
+OPTIMIZATION:
+    FREEZE_BN: false
+    SYNC_BN: true
+    AMP: true
+    BATCH_SIZE_PER_GPU: 16
+    NUM_EPOCHS: 100
+
+    OPTIMIZER:
+        NAME: AdamW
+        LR: &lr 0.0001    # smaller lr for stable training
+        WEIGHT_DECAY: 1.0e-05
+        EPS: 1.0e-08
+
+    SCHEDULER:
+        NAME: OneCycleLR
+        MAX_LR: *lr
+        PCT_START: 0.01
+        ON_EPOCH: False
+
+    CLIP_GRAD:
+        TYPE: norm
+        CLIP_VALUE: 1
+        MAX_NORM: 5
+
+EVALUATOR:
+    BATCH_SIZE_PER_GPU: 12
+    MAX_DISP: 192
+    METRIC:
+        - d1_all
+        - epe
+        - thres_1
+        - thres_2
+        - thres_3
+
+TRAINER:
+    MAX_ITER_PER_EPOCH: 2000
+    EVAL_INTERVAL: -1   # no eval.
+    CKPT_SAVE_INTERVAL: 5
+    MAX_CKPT_SAVE_NUM: 10
+    LOGGER_ITER_INTERVAL: 20
+    VISUALIZE_INTERVAL: 200
+    TRAIN_VISUALIZATION: True
+    EVAL_VISUALIZATION: True

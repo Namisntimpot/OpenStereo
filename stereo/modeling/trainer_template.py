@@ -1,6 +1,7 @@
 # @Time    : 2024/1/20 03:13
 # @Author  : zhangchenming
 import os
+import sys
 import time
 import glob
 import math
@@ -228,7 +229,7 @@ class TrainerTemplate:
         total_bwd_time_per_log = 0.
         total_cnt_per_log = 0
 
-        pbar = tqdm(range(0, num_iters)) if self.local_rank == 0 else range(0, num_iters)
+        pbar = tqdm(range(0, num_iters), disable=self.local_rank != 0)
         for i in pbar:
             total_iter = current_epoch * num_iters + i
             if total_iter >= self.max_iter:
@@ -248,6 +249,8 @@ class TrainerTemplate:
                 model_pred = self.model(data)
                 infer_timer = time.time()
                 loss, tb_info = loss_func(model_pred, data)
+
+            assert torch.isfinite(loss), "Loss is {}, stop training".format(loss.item())
 
             # 不要在autocast下调用, calls backward() on scaled loss to create scaled gradients.
             self.scaler.scale(loss).backward()
@@ -291,7 +294,7 @@ class TrainerTemplate:
                                     tbar.format_interval(remaining_second_all))
                 # self.logger.info(message)
                 if self.local_rank == 0:
-                    tqdm.write(message)
+                    tqdm.write(message, file=sys.stdout)
                 total_inf_time_per_log = total_data_time_per_log = total_bwd_time_per_log = total_cnt_per_log = 0
 
             if self.cfgs.TRAINER.TRAIN_VISUALIZATION and total_iter % visualize_interval == 0:
