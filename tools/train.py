@@ -138,7 +138,7 @@ def main():
             tbar.set_description(f">>>>>> Epoch {current_epoch}/{model_trainer.total_epochs - 1} <<<<<<<")
         model_trainer.train(current_epoch, tbar)
         model_trainer.save_ckpt(current_epoch)
-        if cfgs.TRAINER.EVAL_INTERVAL >0 and current_epoch % cfgs.TRAINER.EVAL_INTERVAL == 0 or current_epoch == model_trainer.total_epochs - 1:
+        if cfgs.TRAINER.EVAL_INTERVAL >0 and (current_epoch % cfgs.TRAINER.EVAL_INTERVAL == 0 or current_epoch == model_trainer.total_epochs - 1):
             model_trainer.evaluate(current_epoch)
 
     if dist.is_initialized():
