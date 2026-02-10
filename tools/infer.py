@@ -8,10 +8,10 @@ from easydict import EasyDict
 from PIL import Image
 
 sys.path.insert(0, './')
-from stereo.utils import common_utils
-from stereo.modeling import build_trainer
-from stereo.utils.disp_color import disp_to_color
-from stereo.datasets.dataset_template import build_transform_by_cfg
+from openstereo.utils import common_utils
+from openstereo.modeling import build_trainer
+from openstereo.utils.disp_color import disp_to_color
+from openstereo.datasets.dataset_template import build_transform_by_cfg
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')

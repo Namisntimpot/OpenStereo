@@ -13,8 +13,8 @@ from easydict import EasyDict
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.insert(0, './')
-from stereo.utils import common_utils
-from stereo.modeling import build_trainer
+from openstereo.utils import common_utils
+from openstereo.modeling import build_trainer
 from cfgs.data_basic import DATA_PATH_DICT
 
 import warnings

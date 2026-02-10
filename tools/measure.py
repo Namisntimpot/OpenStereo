@@ -9,8 +9,8 @@ from easydict import EasyDict
 from tqdm import tqdm
 
 sys.path.insert(0, './')
-from stereo.utils import common_utils
-from stereo.modeling import build_trainer
+from openstereo.utils import common_utils
+from openstereo.modeling import build_trainer
 
 
 def parse_config():

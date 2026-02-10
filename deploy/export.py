@@ -38,22 +38,22 @@ os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
 
 # Network
 sys.path.append(str(ROOT.parent))  # add ROOT to PATH
-from stereo.modeling import models, build_trainer
-from stereo.utils.common_utils import config_loader, create_logger, load_params_from_file
+from openstereo.modeling import models, build_trainer
+from openstereo.utils.common_utils import config_loader, create_logger, load_params_from_file
 
-from stereo.modeling.models.sttr.sttr import STTR
-from stereo.modeling.models.psmnet.psmnet import PSMNet
-from stereo.modeling.models.msnet.MSNet2D import MSNet2D
-from stereo.modeling.models.msnet.MSNet3D import MSNet3D
-from stereo.modeling.models.igev.igev_stereo import IGEVStereo as IGEV
-from stereo.modeling.models.gwcnet.gwcnet import GwcNet
-from stereo.modeling.models.fadnet.fadnet import FADNet
-from stereo.modeling.models.coex.coex import CoEx
+from openstereo.modeling.models.sttr.sttr import STTR
+from openstereo.modeling.models.psmnet.psmnet import PSMNet
+from openstereo.modeling.models.msnet.MSNet2D import MSNet2D
+from openstereo.modeling.models.msnet.MSNet3D import MSNet3D
+from openstereo.modeling.models.igev.igev_stereo import IGEVStereo as IGEV
+from openstereo.modeling.models.gwcnet.gwcnet import GwcNet
+from openstereo.modeling.models.fadnet.fadnet import FADNet
+from openstereo.modeling.models.coex.coex import CoEx
 # from stereo.modeling.models.aanet.aanet import aanet
-from stereo.modeling.models.cfnet.cfnet import CFNet
-from stereo.modeling.models.casnet.cas_gwc import GwcNet as CasGwcNet
-from stereo.modeling.models.casnet.cas_psm import PSMNet as CasPSMNet
-from stereo.modeling.models.lightstereo.lightstereo import LightStereo as LightStereo
+from openstereo.modeling.models.cfnet.cfnet import CFNet
+from openstereo.modeling.models.casnet.cas_gwc import GwcNet as CasGwcNet
+from openstereo.modeling.models.casnet.cas_psm import PSMNet as CasPSMNet
+from openstereo.modeling.models.lightstereo.lightstereo import LightStereo as LightStereo
 
 
 __net__ = {

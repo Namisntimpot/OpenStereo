@@ -13,10 +13,10 @@ from easydict import EasyDict
 from pathlib import Path
 
 sys.path.insert(0, './')
-from stereo.utils import common_utils
-from stereo.datasets.dataset_template import DatasetTemplate
-from stereo.modeling import build_trainer
-from stereo.utils.common_utils import load_params_from_file
+from openstereo.utils import common_utils
+from openstereo.datasets.dataset_template import DatasetTemplate
+from openstereo.modeling import build_trainer
+from openstereo.utils.common_utils import load_params_from_file
 
 
 def parse_config():

@@ -1,8 +1,8 @@
 import numpy as np
 from PIL import Image
 import argparse
-from stereo.datasets.dataset_utils.readpfm import readpfm
-from stereo.utils.disp_color import disp_to_color
+from openstereo.datasets.dataset_utils.readpfm import readpfm
+from openstereo.utils.disp_color import disp_to_color
 
 
 if __name__=='__main__':
