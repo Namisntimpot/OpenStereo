@@ -41,6 +41,14 @@ class LightStereo(nn.Module):
 
         self.refine_3 = BasicDeconv2d(16, 9, kernel_size=4, stride=2, padding=1)
 
+        if cfgs.get("CUSTOM_INIT", False):
+            for m in self.backbone.modules():
+                m._is_backbone = True  # 标记backbone模块
+            if not cfgs.get('PRETRAINED', True):
+                self._custom_init_backbone()
+            self._init_non_backbone_modules()
+            print("[INIT] Initialized with MobileNetV2-aware strategy")
+
     def forward(self, data):
         image1 = data['left']
         image2 = data['right']
@@ -84,3 +92,70 @@ class LightStereo(nn.Module):
         loss_info = {'scalar/train/loss_disp': loss.item()}
 
         return loss, loss_info
+
+
+    def _init_non_backbone_modules(self):
+        """初始化除backbone外的所有模块"""
+        def init_module(m):
+            # 跳过backbone和已初始化模块
+            if getattr(m, '_is_backbone', False) or hasattr(m, '_custom_initialized'):
+                return
+            
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+                # Depthwise卷积特殊处理
+                if m.groups == m.in_channels and m.in_channels > 1:
+                    nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                else:  # 标准/pointwise卷积
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+                m._custom_initialized = True
+                
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, std=0.01)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+                m._custom_initialized = True
+                
+            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d, nn.InstanceNorm2d, nn.InstanceNorm1d)):
+                if hasattr(m, 'weight') and m.weight is not None:
+                    nn.init.ones_(m.weight)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.zeros_(m.bias)
+                m._custom_initialized = True
+                
+            elif isinstance(m, nn.GroupNorm):
+                if hasattr(m, 'weight') and m.weight is not None:
+                    nn.init.ones_(m.weight)
+                if hasattr(m, 'bias') and m.bias is not None: 
+                    nn.init.zeros_(m.bias)
+                m._custom_initialized = True
+        
+        # 递归应用初始化
+        self.apply(init_module)
+        
+        # 标记顶层模块已初始化
+        self._non_backbone_initialized = True
+
+    def _custom_init_backbone(self):
+        """MobileNetV2定制化初始化"""
+        def init_mbnet_module(m):
+            if isinstance(m, nn.Conv2d):
+                # Depthwise卷积 (groups == in_channels 且 in_channels > 1)
+                if m.groups == m.in_channels and m.in_channels > 1:
+                    nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                else:  # Pointwise (1x1) 或 标准卷积
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            
+            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+            
+            # SE模块特殊处理（若存在）
+            elif hasattr(m, 'fc1') and hasattr(m, 'fc2'):  # 简易检测SE模块
+                if hasattr(m.fc2, 'bias'):
+                    nn.init.constant_(m.fc2.bias, -3.0)  # 使Sigmoid初始输出≈0.05
+        
+        self.backbone.apply(init_mbnet_module)
